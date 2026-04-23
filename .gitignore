@@ -1,0 +1,32 @@
+# Environment — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# Node (API)
+api/node_modules/
+api/dist/
+
+# Go (location service)
+location/location-server
+location/*.exe
+
+# Prisma generated client (regenerated on build)
+api/node_modules/.prisma/
+
+# Docker volumes (if accidentally created locally)
+postgres_data/
+redis_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log

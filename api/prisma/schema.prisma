@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  customer
+  worker
+  admin
+}
+
+enum WorkerStatus {
+  pending
+  approved
+  blocked
+}
+
+enum NotificationType {
+  new_review
+  account_approved
+  profile_saved
+  call_received
+}
+
+model User {
+  id           String  @id @default(uuid())
+  role         Role    @default(customer)
+  name         String
+  email        String  @unique
+  phone        String
+  passwordHash String
+  avatarUrl    String?
+  pushToken    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workerProfile WorkerProfile?
+  reviewsGiven  Review[]       @relation("ReviewsGiven")
+  savedWorkers  SavedWorker[]
+  notifications Notification[]
+  refreshTokens RefreshToken[]
+
+  @@index([email])
+}
+
+model WorkerProfile {
+  id               String       @id @default(uuid())
+  userId           String       @unique
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trades           String[]
+  bio              String       @default("")
+  pricingNotes     String       @default("")
+  certifications   String[]
+  serviceAreaMiles Int          @default(10)
+  portfolioPhotos  String[]
+  isAvailable      Boolean      @default(false)
+  latitude         Float?
+  longitude        Float?
+  rating           Float        @default(0)
+  reviewCount      Int          @default(0)
+  status           WorkerStatus @default(pending)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reviewsReceived Review[]        @relation("ReviewsReceived")
+  locationHistory LocationHistory[]
+
+  @@index([status])
+  @@index([isAvailable])
+  @@index([rating])
+}
+
+model Review {
+  id           String        @id @default(uuid())
+  fromUserId   String
+  fromUser     User          @relation("ReviewsGiven", fields: [fromUserId], references: [id])
+  toWorkerId   String
+  toWorker     WorkerProfile @relation("ReviewsReceived", fields: [toWorkerId], references: [id])
+  rating       Int
+  text         String
+  photos       String[]
+  reply        String?
+  reported     Boolean       @default(false)
+  reportReason String?
+  removed      Boolean       @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([toWorkerId])
+  @@index([fromUserId])
+  @@index([reported])
+}
+
+model SavedWorker {
+  id       String @id @default(uuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workerId String
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, workerId])
+  @@index([userId])
+}
+
+model Notification {
+  id     String           @id @default(uuid())
+  userId String
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type   NotificationType
+  title  String
+  body   String
+  read   Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([createdAt])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+}
+
+model LocationHistory {
+  id        String        @id @default(uuid())
+  workerId  String
+  worker    WorkerProfile @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  latitude  Float
+  longitude Float
+
+  createdAt DateTime @default(now())
+
+  @@index([workerId, createdAt])
+}
