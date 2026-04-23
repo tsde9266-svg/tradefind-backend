@@ -1,4 +1,4 @@
-import Expo, { ExpoPushMessage } from 'expo-server-sdk';
+import { Expo, ExpoPushMessage } from 'expo-server-sdk';
 
 const expo = new Expo({ useFcmV1: true });
 
