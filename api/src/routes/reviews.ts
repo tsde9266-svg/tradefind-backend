@@ -51,16 +51,21 @@ export default async function reviewRoutes(app: FastifyInstance) {
   // GET /api/reviews/customer/:id
   app.get('/customer/:id', { preHandler: [app.authenticate] }, async (request: FastifyRequest) => {
     const { id } = request.params as { id: string };
+    const { page = '1', limit = '20' } = request.query as Record<string, string>;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const reviews = await app.prisma.review.findMany({
-      where: { fromUserId: id, removed: false },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        fromUser: { select: { name: true, avatarUrl: true } },
-      },
-    });
+    const [reviews, total] = await Promise.all([
+      app.prisma.review.findMany({
+        where: { fromUserId: id, removed: false },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+        include: { fromUser: { select: { name: true, avatarUrl: true } } },
+      }),
+      app.prisma.review.count({ where: { fromUserId: id, removed: false } }),
+    ]);
 
-    return { success: true, data: reviews };
+    return { success: true, data: reviews, meta: { total, page: parseInt(page), limit: parseInt(limit) } };
   });
 
   // POST /api/reviews
@@ -120,7 +125,7 @@ export default async function reviewRoutes(app: FastifyInstance) {
       return [r];
     });
 
-    await sendPushNotification(
+    sendPushNotification(
       workerProfile.user.pushToken,
       'New review',
       `${fromUser?.name ?? 'Someone'} gave you ${rating} star${rating === 1 ? '' : 's'}`,

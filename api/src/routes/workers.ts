@@ -64,6 +64,7 @@ export default async function workerRoutes(app: FastifyInstance) {
         id: { in: workerIds },
         status: 'approved',
         ...(trade && trade !== 'All' ? { trades: { has: trade } } : {}),
+        ...(availableOnly === 'true' ? { isAvailable: true } : {}),
       },
       include: { user: { select: { name: true, phone: true, avatarUrl: true } } },
     });
@@ -219,7 +220,7 @@ export default async function workerRoutes(app: FastifyInstance) {
         body: 'A customer added you to their saved tradespeople.',
       },
     });
-    await sendPushNotification(workerUser?.pushToken, 'Profile saved', 'A customer saved your profile.');
+    sendPushNotification(workerUser?.pushToken, 'Profile saved', 'A customer saved your profile.');
 
     return { success: true, data: null };
   });

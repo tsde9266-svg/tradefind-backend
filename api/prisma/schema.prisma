@@ -25,6 +25,26 @@ enum NotificationType {
   account_approved
   profile_saved
   call_received
+  job_request
+  job_accepted
+  job_declined
+  job_started
+  job_completed
+}
+
+enum JobType {
+  in_app
+  call
+}
+
+enum JobStatus {
+  pending
+  call_pending
+  accepted
+  started
+  completed
+  declined
+  cancelled
 }
 
 model User {
@@ -40,11 +60,12 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  workerProfile WorkerProfile?
-  reviewsGiven  Review[]       @relation("ReviewsGiven")
-  savedWorkers  SavedWorker[]
-  notifications Notification[]
-  refreshTokens RefreshToken[]
+  workerProfile  WorkerProfile?
+  reviewsGiven   Review[]       @relation("ReviewsGiven")
+  savedWorkers   SavedWorker[]
+  notifications  Notification[]
+  refreshTokens  RefreshToken[]
+  jobsAsCustomer JobRequest[]   @relation("CustomerJobs")
 
   @@index([email])
 }
@@ -71,6 +92,7 @@ model WorkerProfile {
 
   reviewsReceived Review[]        @relation("ReviewsReceived")
   locationHistory LocationHistory[]
+  jobsAsWorker    JobRequest[]    @relation("WorkerJobs")
 
   @@index([status])
   @@index([isAvailable])
@@ -95,6 +117,7 @@ model Review {
 
   @@index([toWorkerId])
   @@index([fromUserId])
+  @@index([fromUserId, toWorkerId])
   @@index([reported])
 }
 
@@ -136,6 +159,24 @@ model RefreshToken {
 
   @@index([token])
   @@index([userId])
+}
+
+model JobRequest {
+  id          String    @id @default(uuid())
+  customerId  String
+  workerId    String
+  type        JobType   @default(in_app)
+  description String?
+  status      JobStatus @default(pending)
+
+  customer    User          @relation("CustomerJobs", fields: [customerId], references: [id], onDelete: Cascade)
+  worker      WorkerProfile @relation("WorkerJobs", fields: [workerId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([customerId, status])
+  @@index([workerId, status])
 }
 
 model LocationHistory {

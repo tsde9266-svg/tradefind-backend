@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import compress from '@fastify/compress';
 import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
@@ -16,6 +17,7 @@ import reviewRoutes from './routes/reviews.js';
 import notificationRoutes from './routes/notifications.js';
 import uploadRoutes from './routes/upload.js';
 import adminRoutes from './routes/admin.js';
+import jobRoutes from './routes/jobs.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -23,7 +25,12 @@ export async function buildApp() {
     trustProxy: true,
   });
 
-  await app.register(cors, { origin: true, credentials: true });
+  const allowedOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(',')
+    : true;
+  await app.register(cors, { origin: allowedOrigins, credentials: true });
+
+  await app.register(compress, { global: true });
 
   await app.register(jwt, {
     secret: process.env.JWT_SECRET!,
@@ -62,8 +69,19 @@ export async function buildApp() {
   await app.register(redisPlugin);
   await app.register(authenticatePlugin);
 
-  // Health check
-  app.get('/health', async () => ({ status: 'ok', ts: Date.now() }));
+  // Health check — verifies DB and Redis are reachable
+  app.get('/health', async (_request, reply) => {
+    try {
+      await Promise.all([
+        app.prisma.$queryRaw`SELECT 1`,
+        app.redis.ping(),
+      ]);
+      return { status: 'ok', ts: Date.now() };
+    } catch (err) {
+      app.log.error(err, '[health] dependency check failed');
+      return reply.status(503).send({ status: 'degraded', ts: Date.now() });
+    }
+  });
 
   // API routes
   await app.register(authRoutes, { prefix: '/api/auth' });
@@ -72,6 +90,7 @@ export async function buildApp() {
   await app.register(notificationRoutes, { prefix: '/api/notifications' });
   await app.register(uploadRoutes, { prefix: '/api/upload' });
   await app.register(adminRoutes, { prefix: '/api/admin' });
+  await app.register(jobRoutes, { prefix: '/api/jobs' });
 
   // Global error handler
   app.setErrorHandler((error, _request, reply) => {
