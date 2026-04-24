@@ -188,4 +188,24 @@ export default async function authRoutes(app: FastifyInstance) {
     }
     return { success: true, data: null };
   });
+
+  // PATCH /api/auth/profile — update name / phone
+  app.patch('/profile', { preHandler: [app.authenticate] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { name, phone } = request.body as { name?: string; phone?: string };
+
+    if (!name && !phone) {
+      return reply.status(400).send({ success: false, error: 'Nothing to update', code: 'VALIDATION_ERROR' });
+    }
+
+    const updated = await app.prisma.user.update({
+      where: { id: request.user.userId },
+      data: {
+        ...(name?.trim() ? { name: name.trim() } : {}),
+        ...(phone?.trim() ? { phone: phone.trim() } : {}),
+      },
+      select: { id: true, name: true, email: true, phone: true, avatarUrl: true, role: true },
+    });
+
+    return { success: true, data: updated };
+  });
 }
