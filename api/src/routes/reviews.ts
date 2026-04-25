@@ -18,13 +18,14 @@ export default async function reviewRoutes(app: FastifyInstance) {
   app.get('/worker/:id', { preHandler: [app.authenticate] }, async (request: FastifyRequest) => {
     const { id } = request.params as { id: string };
     const { page = '1', limit = '20' } = request.query as Record<string, string>;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const take = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
+    const skip = Math.max((parseInt(page) || 1) - 1, 0) * take;
 
     const reviews = await app.prisma.review.findMany({
       where: { toWorkerId: id, removed: false },
       orderBy: { createdAt: 'desc' },
       skip,
-      take: parseInt(limit),
+      take,
       include: {
         fromUser: { select: { name: true, avatarUrl: true } },
       },
@@ -45,27 +46,33 @@ export default async function reviewRoutes(app: FastifyInstance) {
       createdAt: r.createdAt,
     }));
 
-    return { success: true, data, meta: { total, page: parseInt(page), limit: parseInt(limit) } };
+    return { success: true, data, meta: { total, page: parseInt(page) || 1, limit: take } };
   });
 
-  // GET /api/reviews/customer/:id
-  app.get('/customer/:id', { preHandler: [app.authenticate] }, async (request: FastifyRequest) => {
+  // GET /api/reviews/customer/:id — only the customer themselves can view their own reviews
+  app.get('/customer/:id', { preHandler: [app.authenticate] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
+
+    if (request.user.userId !== id && request.user.role !== 'admin') {
+      return reply.status(403).send({ success: false, error: 'Forbidden', code: 'FORBIDDEN' });
+    }
+
     const { page = '1', limit = '20' } = request.query as Record<string, string>;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const take = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
+    const skip = Math.max((parseInt(page) || 1) - 1, 0) * take;
 
     const [reviews, total] = await Promise.all([
       app.prisma.review.findMany({
         where: { fromUserId: id, removed: false },
         orderBy: { createdAt: 'desc' },
         skip,
-        take: parseInt(limit),
+        take,
         include: { fromUser: { select: { name: true, avatarUrl: true } } },
       }),
       app.prisma.review.count({ where: { fromUserId: id, removed: false } }),
     ]);
 
-    return { success: true, data: reviews, meta: { total, page: parseInt(page), limit: parseInt(limit) } };
+    return { success: true, data: reviews, meta: { total, page: parseInt(page) || 1, limit: take } };
   });
 
   // POST /api/reviews

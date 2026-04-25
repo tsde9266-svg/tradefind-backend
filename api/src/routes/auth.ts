@@ -69,7 +69,7 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.status(409).send({ success: false, error: 'Email already registered', code: 'EMAIL_TAKEN' });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10); // 10 = ~100ms, still secure, 4x faster than 12
+    const passwordHash = await bcrypt.hash(password, 12); // OWASP 2025 minimum recommendation
 
     const user = await app.prisma.user.create({
       data: {
@@ -104,12 +104,13 @@ export default async function authRoutes(app: FastifyInstance) {
     const { email, password } = body.data;
 
     const user = await app.prisma.user.findUnique({ where: { email }, include: { workerProfile: true } });
-    if (!user) {
-      return reply.status(401).send({ success: false, error: 'Invalid credentials', code: 'INVALID_CREDENTIALS' });
-    }
 
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) {
+    // Always run bcrypt.compare even if user not found — prevents timing attack
+    // that leaks whether an email exists based on response time difference
+    const DUMMY_HASH = '$2b$12$invalidhashpadding000000000000000000000000000000000000000';
+    const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
+
+    if (!user || !valid) {
       return reply.status(401).send({ success: false, error: 'Invalid credentials', code: 'INVALID_CREDENTIALS' });
     }
 

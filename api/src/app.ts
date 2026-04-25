@@ -23,8 +23,8 @@ export async function buildApp() {
   const app = Fastify({
     logger: process.env.NODE_ENV !== 'test',
     trustProxy: true,
-    // Protect against oversized JSON bodies (100kb max)
-    bodyLimit: 100 * 1024,
+    // Protect against oversized JSON bodies (256kb max — covers photo URL arrays)
+    bodyLimit: 256 * 1024,
     // Drop requests that take more than 30s
     requestTimeout: 30_000,
   });
@@ -49,7 +49,7 @@ export async function buildApp() {
   await app.register(rateLimit, {
     max: 200,            // per IP, not global
     timeWindow: '1 minute',
-    skipOnError: true,
+    skipOnError: false,
     keyGenerator: (request) =>
       request.headers['x-forwarded-for']?.toString().split(',')[0].trim() ??
       request.ip ??

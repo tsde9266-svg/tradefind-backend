@@ -22,7 +22,8 @@ export default async function adminRoutes(app: FastifyInstance) {
   // GET /api/admin/workers
   app.get('/workers', { preHandler: [app.adminOnly] }, async (request: FastifyRequest) => {
     const { status, search, page = '1', limit = '20' } = request.query as Record<string, string>;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const take = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
+    const skip = Math.max((parseInt(page) || 1) - 1, 0) * take;
 
     const where: any = {};
     if (status) where.status = status;
@@ -34,14 +35,14 @@ export default async function adminRoutes(app: FastifyInstance) {
       app.prisma.workerProfile.findMany({
         where,
         skip,
-        take: parseInt(limit),
+        take,
         orderBy: { createdAt: 'desc' },
         include: { user: { select: { name: true, email: true, phone: true } } },
       }),
       app.prisma.workerProfile.count({ where }),
     ]);
 
-    return { success: true, data: workers, meta: { total, page: parseInt(page), limit: parseInt(limit) } };
+    return { success: true, data: workers, meta: { total, page: parseInt(page) || 1, limit: take } };
   });
 
   // PATCH /api/admin/workers/:id

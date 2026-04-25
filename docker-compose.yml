@@ -63,7 +63,7 @@ services:
     container_name: tf-api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://tradefind:${POSTGRES_PASSWORD}@postgres:5432/tradefind?connection_limit=20&pool_timeout=20
+      DATABASE_URL: postgresql://tradefind:${POSTGRES_PASSWORD}@postgres:5432/tradefind?connection_limit=50&pool_timeout=30
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}

@@ -46,11 +46,19 @@ export default async function workerRoutes(app: FastifyInstance) {
       return reply.status(400).send({ success: false, error: 'lat and lng required', code: 'VALIDATION_ERROR' });
     }
 
+    const parsedLat = parseFloat(lat);
+    const parsedLng = parseFloat(lng);
+    const parsedRadius = Math.min(Math.max(parseFloat(radiusKm) || 10, 0.1), 100); // clamp 0.1–100 km
+
+    if (isNaN(parsedLat) || isNaN(parsedLng)) {
+      return reply.status(400).send({ success: false, error: 'lat and lng must be valid numbers', code: 'VALIDATION_ERROR' });
+    }
+
     const geoWorkers = await geoSearchNearby(
       app.redis,
-      parseFloat(lat),
-      parseFloat(lng),
-      parseFloat(radiusKm),
+      parsedLat,
+      parsedLng,
+      parsedRadius,
       50,
     );
 
@@ -83,8 +91,8 @@ export default async function workerRoutes(app: FastifyInstance) {
   // GET /api/workers/saved
   app.get('/saved', { preHandler: [app.authenticate] }, async (request: FastifyRequest) => {
     const { page = '1', limit = '20' } = request.query as Record<string, string>;
-    const take = Math.min(parseInt(limit), 50); // max 50 per page
-    const skip = (parseInt(page) - 1) * take;
+    const take = Math.min(Math.max(parseInt(limit) || 20, 1), 50);
+    const skip = Math.max((parseInt(page) || 1) - 1, 0) * take;
 
     const [saved, total] = await Promise.all([
       app.prisma.savedWorker.findMany({

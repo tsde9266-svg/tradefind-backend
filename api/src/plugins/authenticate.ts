@@ -21,10 +21,10 @@ export default fp(async function authenticatePlugin(app: FastifyInstance) {
     try {
       await request.jwtVerify();
       if (request.user.role !== 'admin') {
-        reply.status(403).send({ success: false, error: 'Forbidden', code: 'ADMIN_REQUIRED' });
+        return reply.status(403).send({ success: false, error: 'Forbidden', code: 'ADMIN_REQUIRED' });
       }
     } catch {
-      reply.status(401).send({ success: false, error: 'Unauthorized', code: 'AUTH_REQUIRED' });
+      return reply.status(401).send({ success: false, error: 'Unauthorized', code: 'AUTH_REQUIRED' });
     }
   });
 });

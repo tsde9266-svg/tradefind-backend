@@ -181,7 +181,6 @@ export default async function jobRoutes(app: FastifyInstance) {
 
     // Only the customer or the assigned worker can view
     const isCustomer = job.customerId === userId;
-    const isWorker = role === 'worker' && (() => false)(); // resolved below
     const workerProfile = role === 'worker'
       ? await app.prisma.workerProfile.findUnique({ where: { userId } })
       : null;
