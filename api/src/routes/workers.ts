@@ -64,8 +64,28 @@ export default async function workerRoutes(app: FastifyInstance) {
 
     if (geoWorkers.length === 0) return { success: true, data: [] };
 
-    const distanceMap = Object.fromEntries(geoWorkers.map((w) => [w.id, w.distanceMetres]));
-    const workerIds = geoWorkers.map((w) => w.id);
+    // Filter out workers whose geo session has expired (app crashed without going offline).
+    // worker:geo:${workerId} has a 2h TTL — absence means the worker is stale.
+    const freshnessPipe = app.redis.pipeline();
+    geoWorkers.forEach((w) => freshnessPipe.exists(`worker:geo:${w.id}`));
+    const freshnessResults = await freshnessPipe.exec();
+    const freshIds = new Set(
+      geoWorkers
+        .filter((_, i) => (freshnessResults?.[i]?.[1] as number) === 1)
+        .map((w) => w.id),
+    );
+
+    // Remove stale workers from geo set in the background (fire-and-forget)
+    const staleIds = geoWorkers.map((w) => w.id).filter((id) => !freshIds.has(id));
+    if (staleIds.length > 0) {
+      app.redis.zrem(GEO_KEY, ...staleIds).catch(() => {});
+    }
+
+    const filteredGeoWorkers = geoWorkers.filter((w) => freshIds.has(w.id));
+    if (filteredGeoWorkers.length === 0) return { success: true, data: [] };
+
+    const distanceMap = Object.fromEntries(filteredGeoWorkers.map((w) => [w.id, w.distanceMetres]));
+    const workerIds = filteredGeoWorkers.map((w) => w.id);
 
     const profiles = await app.prisma.workerProfile.findMany({
       where: {

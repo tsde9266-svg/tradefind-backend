@@ -49,7 +49,11 @@ function jobView(job: any) {
 export default async function jobRoutes(app: FastifyInstance) {
 
   // POST /api/jobs — customer creates a job request
-  app.post('/', { preHandler: [app.authenticate] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  // Limit job creation — prevents spamming workers with requests
+  app.post('/', {
+    preHandler: [app.authenticate],
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     if (request.user.role !== 'customer') {
       return reply.status(403).send({ success: false, error: 'Customers only', code: 'FORBIDDEN' });
     }

@@ -9,8 +9,11 @@ const presignSchema = z.object({
 });
 
 export default async function uploadRoutes(app: FastifyInstance) {
-  // POST /api/upload/presign
-  app.post('/presign', { preHandler: [app.authenticate] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  // POST /api/upload/presign — strict limit: presigned URLs cost money, prevent abuse
+  app.post('/presign', {
+    preHandler: [app.authenticate],
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const body = presignSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ success: false, error: 'Validation failed', code: 'VALIDATION_ERROR' });

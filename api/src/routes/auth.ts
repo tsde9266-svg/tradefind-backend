@@ -156,9 +156,18 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ success: false, error: 'Invalid or expired refresh token', code: 'REFRESH_INVALID' });
     }
 
-    // Rotate refresh token
-    await app.prisma.refreshToken.delete({ where: { id: stored.id } });
-    const newRefresh = await createRefreshToken(app, stored.userId);
+    // Rotate refresh token atomically — delete old + create new in one transaction
+    // so a partial failure never leaves the user logged out with no valid token
+    const newToken = randomUUID();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + REFRESH_TTL_DAYS);
+
+    await app.prisma.$transaction([
+      app.prisma.refreshToken.delete({ where: { id: stored.id } }),
+      app.prisma.refreshToken.create({ data: { userId: stored.userId, token: newToken, expiresAt } }),
+    ]);
+
+    const newRefresh = newToken;
     const accessToken = signAccess(app, stored.userId, stored.user.role);
 
     return { success: true, data: { accessToken, refreshToken: newRefresh } };

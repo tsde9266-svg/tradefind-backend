@@ -76,7 +76,12 @@ export default async function reviewRoutes(app: FastifyInstance) {
   });
 
   // POST /api/reviews
-  app.post('/', { preHandler: [app.authenticate] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  // Review creation — strict: business logic already limits one per worker,
+  // but rate-limit prevents scanning for valid worker IDs
+  app.post('/', {
+    preHandler: [app.authenticate],
+    config: { rateLimit: { max: 15, timeWindow: '1 minute' } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const body = createReviewSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ success: false, error: 'Validation failed', code: 'VALIDATION_ERROR' });
