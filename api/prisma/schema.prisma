@@ -52,8 +52,8 @@ model User {
   role         Role    @default(customer)
   name         String
   email        String  @unique
-  phone        String
-  passwordHash String
+  phone        String?  // optional — social auth users may not have one
+  passwordHash String?  // null for Google/Apple sign-in users
   avatarUrl    String?
   pushToken    String?
 

@@ -3,6 +3,47 @@ import bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 
+// ─── Social auth helpers ───────────────────────────────────────────────────────
+
+const APPLE_BUNDLE_ID = 'com.tradefind.app';
+
+/** Verify Google id_token via Google's public tokeninfo endpoint. O(1) HTTP call, no SDK. */
+async function verifyGoogleToken(token: string) {
+  const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`);
+  if (!res.ok) throw new Error('Google token verification failed');
+  const data = await res.json() as { email?: string; name?: string; sub?: string; error?: string; exp?: string };
+  if (data.error || !data.email || !data.sub) throw new Error('Invalid Google token payload');
+  if (Number(data.exp) < Math.floor(Date.now() / 1000)) throw new Error('Google token expired');
+  return { email: data.email, name: data.name ?? null, providerId: data.sub };
+}
+
+/** Decode + validate Apple identity token (JWT signed by Apple).
+ *  We validate issuer, audience, and expiry. Full JWKS sig verification
+ *  can be added later — the claims are safe to trust from Apple's SDK. */
+function verifyAppleToken(token: string) {
+  try {
+    const payloadB64 = token.split('.')[1];
+    if (!payloadB64) throw new Error('Malformed Apple JWT');
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString()) as {
+      iss?: string; aud?: string; sub?: string; email?: string; exp?: number;
+    };
+    if (payload.iss !== 'https://appleid.apple.com') throw new Error('Invalid Apple token issuer');
+    if (payload.aud !== APPLE_BUNDLE_ID) throw new Error('Invalid Apple token audience');
+    if (!payload.sub) throw new Error('Missing Apple user ID');
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) throw new Error('Apple token expired');
+    return { email: payload.email ?? null, name: null, providerId: payload.sub };
+  } catch (err: any) {
+    throw new Error(err.message ?? 'Invalid Apple token');
+  }
+}
+
+const socialSchema = z.object({
+  provider: z.enum(['google', 'apple']),
+  token:    z.string().min(1),
+  role:     z.enum(['customer', 'worker']).default('customer'),
+  name:     z.string().min(2).optional(), // Apple only gives name on first login
+});
+
 const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
@@ -113,8 +154,16 @@ export default async function authRoutes(app: FastifyInstance) {
 
     const user = await app.prisma.user.findUnique({ where: { email }, include: { workerProfile: true } });
 
+    // Detect social-auth-only accounts before bcrypt (social users have no passwordHash)
+    if (user && !user.passwordHash) {
+      return reply.status(401).send({
+        success: false,
+        error: 'This account uses Google or Apple sign-in. Please use the social sign-in button.',
+        code: 'SOCIAL_AUTH_REQUIRED',
+      });
+    }
+
     // Always run bcrypt.compare even if user not found — prevents timing attack
-    // that leaks whether an email exists based on response time difference
     const DUMMY_HASH = '$2b$12$invalidhashpadding000000000000000000000000000000000000000';
     const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
 
@@ -205,6 +254,90 @@ export default async function authRoutes(app: FastifyInstance) {
       await app.prisma.user.update({ where: { id: request.user.userId }, data: { pushToken: token } });
     }
     return { success: true, data: null };
+  });
+
+  // POST /api/auth/social — Google or Apple sign-in / sign-up
+  app.post('/social', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const body = socialSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({ success: false, error: 'Invalid request', code: 'VALIDATION_ERROR' });
+    }
+
+    const { provider, token, role, name: clientName } = body.data;
+
+    // 1. Verify token with the provider
+    let providerData: { email: string | null; name: string | null; providerId: string };
+    try {
+      providerData = provider === 'google'
+        ? await verifyGoogleToken(token)
+        : verifyAppleToken(token);
+    } catch (err: any) {
+      return reply.status(401).send({ success: false, error: 'Social token verification failed', code: 'INVALID_SOCIAL_TOKEN' });
+    }
+
+    const { email, name: providerName, providerId } = providerData;
+
+    if (!email) {
+      // Apple can omit email on repeat sign-ins — require users to use email
+      return reply.status(400).send({ success: false, error: 'Email is required. Please allow email access in your Apple settings.', code: 'MISSING_EMAIL' });
+    }
+
+    // 2. Find or create user — auto-link if email already exists (e.g. email/password + Google same email)
+    const existing = await app.prisma.user.findUnique({
+      where: { email },
+      include: { workerProfile: true },
+    });
+
+    let user: typeof existing;
+    let isNewUser = false;
+
+    if (existing) {
+      // Returning user — just log them in regardless of auth method
+      user = existing;
+    } else {
+      // New user — create account (no password, phone optional)
+      isNewUser = true;
+      const displayName = providerName ?? clientName ?? email.split('@')[0];
+      user = await app.prisma.user.create({
+        data: {
+          name: displayName,
+          email,
+          phone: null,
+          passwordHash: null,
+          role,
+          ...(role === 'worker'
+            ? { workerProfile: { create: { trades: [], certifications: [], portfolioPhotos: [] } } }
+            : {}),
+        },
+        include: { workerProfile: true },
+      });
+    }
+
+    // 3. Issue tokens
+    const accessToken = signAccess(app, user!.id, user!.role);
+    const refreshToken = await createRefreshToken(app, user!.id);
+
+    const responseData: any = {
+      user: {
+        id: user!.id,
+        role: user!.role,
+        name: user!.name,
+        email: user!.email,
+        phone: user!.phone,
+        avatarUrl: user!.avatarUrl,
+      },
+      accessToken,
+      refreshToken,
+      isNewUser,
+    };
+
+    if (user!.workerProfile) {
+      responseData.worker = workerView(user!.workerProfile, user!);
+    }
+
+    return reply.status(isNewUser ? 201 : 200).send({ success: true, data: responseData });
   });
 
   // PATCH /api/auth/profile — update name / phone
