@@ -13,12 +13,25 @@ export default fp(async function prismaPlugin(app: FastifyInstance) {
     log: process.env.NODE_ENV === 'development' ? ['query', 'warn', 'error'] : ['error'],
   });
 
-  // Kill any DB query that takes longer than 30 seconds (prevents connection pool exhaustion)
+  // Kill any DB query that takes longer than 30s (prevents connection pool exhaustion).
+  // The timer is always cleared — either by the query resolving or by the timeout
+  // firing — so no dangling timers accumulate under load.
   prisma.$use(async (params, next) => {
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('DB query timeout after 30s')), 30_000),
-    );
-    return Promise.race([next(params), timeout]);
+    let timer: ReturnType<typeof setTimeout>;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`DB timeout: ${params.model}.${params.action} exceeded 30s`)),
+        30_000,
+      );
+    });
+    try {
+      const result = await Promise.race([next(params), timeout]);
+      clearTimeout(timer!);
+      return result;
+    } catch (err) {
+      clearTimeout(timer!);
+      throw err;
+    }
   });
 
   await prisma.$connect();

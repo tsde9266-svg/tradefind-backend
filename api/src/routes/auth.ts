@@ -54,9 +54,17 @@ function workerView(profile: any, user: any) {
   };
 }
 
+// Per-endpoint rate-limit config for auth routes (much stricter than the global 200/min)
+const authRateLimit = {
+  register: { max: 10,  timeWindow: '10 minutes' }, // 10 registrations per IP per 10 min
+  login:    { max: 20,  timeWindow: '5 minutes'  }, // 20 login attempts per IP per 5 min
+  refresh:  { max: 60,  timeWindow: '1 minute'   }, // refresh can be frequent (auto)
+  pushToken:{ max: 30,  timeWindow: '1 minute'   },
+};
+
 export default async function authRoutes(app: FastifyInstance) {
   // POST /api/auth/register
-  app.post('/register', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/register', { config: { rateLimit: authRateLimit.register } }, async (request: FastifyRequest, reply: FastifyReply) => {
     const body = registerSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ success: false, error: 'Validation failed', code: 'VALIDATION_ERROR' });
@@ -95,7 +103,7 @@ export default async function authRoutes(app: FastifyInstance) {
   });
 
   // POST /api/auth/login
-  app.post('/login', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/login', { config: { rateLimit: authRateLimit.login } }, async (request: FastifyRequest, reply: FastifyReply) => {
     const body = loginSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({ success: false, error: 'Validation failed', code: 'VALIDATION_ERROR' });
@@ -132,7 +140,7 @@ export default async function authRoutes(app: FastifyInstance) {
   });
 
   // POST /api/auth/refresh
-  app.post('/refresh', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/refresh', { config: { rateLimit: authRateLimit.refresh } }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { refreshToken } = request.body as { refreshToken?: string };
     if (!refreshToken) {
       return reply.status(400).send({ success: false, error: 'refreshToken required', code: 'VALIDATION_ERROR' });
