@@ -208,7 +208,10 @@ export default async function jobRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const { action } = body.data;
 
-    const profile = await app.prisma.workerProfile.findUnique({ where: { userId: request.user.userId } });
+    const profile = await app.prisma.workerProfile.findUnique({
+      where: { userId: request.user.userId },
+      include: { user: { select: { name: true } } },
+    });
     if (!profile) return reply.status(404).send({ success: false, error: 'Profile not found', code: 'NOT_FOUND' });
 
     const job = await app.prisma.jobRequest.findFirst({
@@ -217,7 +220,6 @@ export default async function jobRoutes(app: FastifyInstance) {
     });
     if (!job) return reply.status(404).send({ success: false, error: 'Job not found', code: 'NOT_FOUND' });
 
-    // Validate state transitions
     const validTransitions: Record<string, string[]> = {
       accept: ['pending'],
       decline: ['pending', 'call_pending'],
@@ -231,7 +233,7 @@ export default async function jobRoutes(app: FastifyInstance) {
 
     const updated = await app.prisma.jobRequest.update({ where: { id }, data: { status: newStatus } });
 
-    const workerName = (await app.prisma.user.findUnique({ where: { id: request.user.userId }, select: { name: true } }))?.name ?? 'Your worker';
+    const workerName = (profile as any).user?.name ?? 'Your worker';
 
     const [notifTitle, notifBody, notifType] =
       newStatus === 'accepted'
@@ -254,7 +256,10 @@ export default async function jobRoutes(app: FastifyInstance) {
 
     const { id } = request.params as { id: string };
 
-    const profile = await app.prisma.workerProfile.findUnique({ where: { userId: request.user.userId } });
+    const profile = await app.prisma.workerProfile.findUnique({
+      where: { userId: request.user.userId },
+      include: { user: { select: { name: true } } },
+    });
     if (!profile) return reply.status(404).send({ success: false, error: 'Profile not found', code: 'NOT_FOUND' });
 
     const job = await app.prisma.jobRequest.findFirst({
@@ -265,7 +270,7 @@ export default async function jobRoutes(app: FastifyInstance) {
 
     const updated = await app.prisma.jobRequest.update({ where: { id }, data: { status: 'started' } });
 
-    const workerName = (await app.prisma.user.findUnique({ where: { id: request.user.userId }, select: { name: true } }))?.name ?? 'Your worker';
+    const workerName = (profile as any).user?.name ?? 'Your worker';
 
     await app.prisma.notification.create({
       data: { userId: job.customerId, type: 'job_started', title: `${workerName} is on his way!`, body: 'Open the app to track him live.' },
@@ -283,7 +288,10 @@ export default async function jobRoutes(app: FastifyInstance) {
 
     const { id } = request.params as { id: string };
 
-    const profile = await app.prisma.workerProfile.findUnique({ where: { userId: request.user.userId } });
+    const profile = await app.prisma.workerProfile.findUnique({
+      where: { userId: request.user.userId },
+      include: { user: { select: { name: true } } },
+    });
     if (!profile) return reply.status(404).send({ success: false, error: 'Profile not found', code: 'NOT_FOUND' });
 
     const job = await app.prisma.jobRequest.findFirst({
@@ -294,7 +302,7 @@ export default async function jobRoutes(app: FastifyInstance) {
 
     const updated = await app.prisma.jobRequest.update({ where: { id }, data: { status: 'completed' } });
 
-    const workerName = (await app.prisma.user.findUnique({ where: { id: request.user.userId }, select: { name: true } }))?.name ?? 'Your worker';
+    const workerName = (profile as any).user?.name ?? 'Your worker';
 
     await app.prisma.notification.create({
       data: { userId: job.customerId, type: 'job_completed', title: 'Job completed!', body: `${workerName} has finished the job. How did it go?` },

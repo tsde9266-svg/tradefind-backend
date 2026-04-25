@@ -23,6 +23,10 @@ export async function buildApp() {
   const app = Fastify({
     logger: process.env.NODE_ENV !== 'test',
     trustProxy: true,
+    // Protect against oversized JSON bodies (100kb max)
+    bodyLimit: 100 * 1024,
+    // Drop requests that take more than 30s
+    requestTimeout: 30_000,
   });
 
   const allowedOrigins = process.env.CORS_ORIGINS
@@ -30,7 +34,8 @@ export async function buildApp() {
     : true;
   await app.register(cors, { origin: allowedOrigins, credentials: true });
 
-  await app.register(compress, { global: true });
+  // Only compress responses larger than 1kb — compression is CPU-expensive
+  await app.register(compress, { global: true, threshold: 1024 });
 
   await app.register(jwt, {
     secret: process.env.JWT_SECRET!,
