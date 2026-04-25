@@ -97,6 +97,7 @@ model WorkerProfile {
   @@index([status])
   @@index([isAvailable])
   @@index([rating])
+  @@index([latitude, longitude])
 }
 
 model Review {
@@ -146,6 +147,7 @@ model Notification {
 
   @@index([userId, read])
   @@index([createdAt])
+  @@index([type])
 }
 
 model RefreshToken {
@@ -159,6 +161,7 @@ model RefreshToken {
 
   @@index([token])
   @@index([userId])
+  @@index([expiresAt])
 }
 
 model JobRequest {
