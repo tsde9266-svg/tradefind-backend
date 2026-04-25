@@ -230,7 +230,19 @@ export default async function jobRoutes(app: FastifyInstance) {
 
     const newStatus = action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'accepted';
 
-    const updated = await app.prisma.jobRequest.update({ where: { id }, data: { status: newStatus } });
+    // Atomic conditional update — prevents two workers from transitioning the same job simultaneously.
+    // updateMany returns count=0 if the WHERE condition (status check) doesn't match,
+    // meaning another request already changed the status.
+    const result = await app.prisma.jobRequest.updateMany({
+      where: { id, status: { in: validTransitions[action] } },
+      data: { status: newStatus },
+    });
+
+    if (result.count === 0) {
+      return reply.status(409).send({ success: false, error: 'Job status changed by another request', code: 'CONFLICT' });
+    }
+
+    const updated = await app.prisma.jobRequest.findUnique({ where: { id } });
 
     const workerName = (profile as any).user?.name ?? 'Your worker';
 
@@ -267,7 +279,14 @@ export default async function jobRoutes(app: FastifyInstance) {
     });
     if (!job) return reply.status(404).send({ success: false, error: 'Job not found or not in accepted state', code: 'NOT_FOUND' });
 
-    const updated = await app.prisma.jobRequest.update({ where: { id }, data: { status: 'started' } });
+    const startResult = await app.prisma.jobRequest.updateMany({
+      where: { id, workerId: profile.id, status: 'accepted' },
+      data: { status: 'started' },
+    });
+    if (startResult.count === 0) {
+      return reply.status(409).send({ success: false, error: 'Job already started or changed', code: 'CONFLICT' });
+    }
+    const updated = await app.prisma.jobRequest.findUnique({ where: { id } });
 
     const workerName = (profile as any).user?.name ?? 'Your worker';
 
@@ -299,7 +318,14 @@ export default async function jobRoutes(app: FastifyInstance) {
     });
     if (!job) return reply.status(404).send({ success: false, error: 'Job not found or not in started state', code: 'NOT_FOUND' });
 
-    const updated = await app.prisma.jobRequest.update({ where: { id }, data: { status: 'completed' } });
+    const completeResult = await app.prisma.jobRequest.updateMany({
+      where: { id, workerId: profile.id, status: 'started' },
+      data: { status: 'completed' },
+    });
+    if (completeResult.count === 0) {
+      return reply.status(409).send({ success: false, error: 'Job already completed or changed', code: 'CONFLICT' });
+    }
+    const updated = await app.prisma.jobRequest.findUnique({ where: { id } });
 
     const workerName = (profile as any).user?.name ?? 'Your worker';
 

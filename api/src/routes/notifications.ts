@@ -1,14 +1,25 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
 export default async function notificationRoutes(app: FastifyInstance) {
-  // GET /api/notifications
+  // GET /api/notifications — supports cursor-based pagination for large notification lists
   app.get('/', { preHandler: [app.authenticate] }, async (request: FastifyRequest) => {
+    const { cursor, limit = '50' } = request.query as Record<string, string>;
+    const take = Math.min(Math.max(parseInt(limit) || 50, 1), 100);
+
     const notifications = await app.prisma.notification.findMany({
-      where: { userId: request.user.userId },
+      where: {
+        userId: request.user.userId,
+        ...(cursor ? { createdAt: { lt: new Date(cursor) } } : {}),
+      },
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      take,
     });
-    return { success: true, data: notifications };
+
+    const nextCursor = notifications.length === take
+      ? notifications[notifications.length - 1]?.createdAt?.toISOString()
+      : null;
+
+    return { success: true, data: notifications, meta: { nextCursor } };
   });
 
   // PATCH /api/notifications/read-all

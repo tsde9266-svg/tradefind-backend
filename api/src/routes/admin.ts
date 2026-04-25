@@ -107,18 +107,26 @@ export default async function adminRoutes(app: FastifyInstance) {
     const review = await app.prisma.review.update({
       where: { id },
       data: action === 'remove' ? { removed: true, reported: false } : { reported: false },
+      select: { toWorkerId: true, rating: true },
     });
 
     if (action === 'remove') {
-      // Recalculate worker rating
-      const stats = await app.prisma.review.aggregate({
-        where: { toWorkerId: review.toWorkerId, removed: false },
-        _avg: { rating: true },
-        _count: { id: true },
+      // Incremental decrement — O(1) instead of O(n) aggregate scan
+      const current = await app.prisma.workerProfile.findUnique({
+        where: { id: review.toWorkerId },
+        select: { rating: true, reviewCount: true },
       });
+      const oldCount = current?.reviewCount ?? 1;
+      const oldAvg   = current?.rating ?? 0;
+      const removedRating = (review as any).rating ?? 0;
+      const newCount = Math.max(oldCount - 1, 0);
+      const newAvg   = newCount === 0
+        ? 0
+        : parseFloat(((oldAvg * oldCount - removedRating) / newCount).toFixed(2));
+
       await app.prisma.workerProfile.update({
         where: { id: review.toWorkerId },
-        data: { rating: stats._avg.rating ?? 0, reviewCount: stats._count.id },
+        data: { rating: newAvg, reviewCount: newCount },
       });
     }
 

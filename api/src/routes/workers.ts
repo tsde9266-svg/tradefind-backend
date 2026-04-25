@@ -74,14 +74,15 @@ export default async function workerRoutes(app: FastifyInstance) {
         ...(trade && trade !== 'All' ? { trades: { has: trade } } : {}),
         ...(availableOnly === 'true' ? { isAvailable: true } : {}),
       },
+      // Sort by rating in DB when requested — avoids JS sort on full result set
+      orderBy: sortBy === 'rating' ? { rating: 'desc' } : undefined,
       include: { user: { select: { name: true, phone: true, avatarUrl: true } } },
     });
 
     let result = profiles.map((p) => workerPublicView(p, p.user, distanceMap[p.id]));
 
-    if (sortBy === 'rating') {
-      result.sort((a, b) => b.rating - a.rating);
-    } else {
+    // Only sort by distance in JS (DB doesn't know distance — it comes from Redis)
+    if (sortBy !== 'rating') {
       result.sort((a, b) => (a.distance ?? 0) - (b.distance ?? 0));
     }
 
@@ -198,7 +199,8 @@ export default async function workerRoutes(app: FastifyInstance) {
       return reply.status(403).send({ success: false, error: 'Account pending approval', code: 'NOT_APPROVED' });
     }
 
-    await app.prisma.workerProfile.update({
+    // Run DB update and Redis geo update in parallel — saves one network round-trip
+    const dbUpdate = app.prisma.workerProfile.update({
       where: { id: profile.id },
       data: {
         isAvailable: available,
@@ -207,11 +209,11 @@ export default async function workerRoutes(app: FastifyInstance) {
       },
     });
 
-    if (available && lat !== undefined && lng !== undefined) {
-      await geoAddWorker(app.redis, profile.id, request.user.userId, lat, lng);
-    } else {
-      await geoRemoveWorker(app.redis, profile.id, request.user.userId);
-    }
+    const redisUpdate = (available && lat !== undefined && lng !== undefined)
+      ? geoAddWorker(app.redis, profile.id, request.user.userId, lat, lng)
+      : geoRemoveWorker(app.redis, profile.id, request.user.userId);
+
+    await Promise.all([dbUpdate, redisUpdate]);
 
     return { success: true, data: { available } };
   });

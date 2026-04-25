@@ -107,16 +107,20 @@ export default async function reviewRoutes(app: FastifyInstance) {
         data: { fromUserId: request.user.userId, toWorkerId: toId, rating, text, photos },
       });
 
-      // Recalculate average rating
-      const stats = await tx.review.aggregate({
-        where: { toWorkerId: toId, removed: false },
-        _avg: { rating: true },
-        _count: { id: true },
+      // Incremental rating update — O(1) instead of O(n) aggregate scan.
+      // Formula: new_avg = (old_avg * old_count + new_rating) / (old_count + 1)
+      const current = await tx.workerProfile.findUnique({
+        where: { id: toId },
+        select: { rating: true, reviewCount: true },
       });
+      const oldCount = current?.reviewCount ?? 0;
+      const oldAvg   = current?.rating ?? 0;
+      const newCount = oldCount + 1;
+      const newAvg   = parseFloat(((oldAvg * oldCount + rating) / newCount).toFixed(2));
 
       await tx.workerProfile.update({
         where: { id: toId },
-        data: { rating: stats._avg.rating ?? 0, reviewCount: stats._count.id },
+        data: { rating: newAvg, reviewCount: newCount },
       });
 
       // Create notification

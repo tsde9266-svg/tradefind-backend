@@ -3,15 +3,20 @@ import Redis from 'ioredis';
 const GEO_KEY = 'workers_available';
 
 export async function geoAddWorker(redis: Redis, workerId: string, userId: string, lat: number, lng: number) {
-  await redis.geoadd(GEO_KEY, lng, lat, workerId);
-  // Store session keyed by userId so Go service can resolve workerId from JWT's userId claim
-  await redis.hset(`worker:session:${userId}`, { workerId, lastSeen: Date.now() });
-  await redis.expire(`worker:session:${userId}`, 7200); // 2 hours TTL
+  // Pipeline: 3 commands in one TCP round-trip instead of 3 sequential calls
+  const pipe = redis.pipeline();
+  pipe.geoadd(GEO_KEY, lng, lat, workerId);
+  pipe.hset(`worker:session:${userId}`, { workerId, lastSeen: Date.now() });
+  pipe.expire(`worker:session:${userId}`, 7200); // 2 hours TTL
+  await pipe.exec();
 }
 
 export async function geoRemoveWorker(redis: Redis, workerId: string, userId: string) {
-  await redis.zrem(GEO_KEY, workerId);
-  await redis.del(`worker:session:${userId}`);
+  // Pipeline: 2 commands in one TCP round-trip
+  const pipe = redis.pipeline();
+  pipe.zrem(GEO_KEY, workerId);
+  pipe.del(`worker:session:${userId}`);
+  await pipe.exec();
 }
 
 
