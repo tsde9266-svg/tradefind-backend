@@ -69,18 +69,6 @@ export default async function jobRoutes(app: FastifyInstance) {
       return reply.status(404).send({ success: false, error: 'Worker not found', code: 'NOT_FOUND' });
     }
 
-    // Prevent duplicate active requests between same customer-worker pair
-    const duplicate = await app.prisma.jobRequest.findFirst({
-      where: {
-        customerId: request.user.userId,
-        workerId,
-        status: { in: ['pending', 'call_pending', 'accepted', 'started'] },
-      },
-    });
-    if (duplicate) {
-      return reply.status(409).send({ success: false, error: 'You already have an active request with this worker', code: 'DUPLICATE_JOB' });
-    }
-
     const customer = await app.prisma.user.findUnique({
       where: { id: request.user.userId },
       select: { name: true },
@@ -88,9 +76,32 @@ export default async function jobRoutes(app: FastifyInstance) {
 
     const initialStatus = type === 'call' ? 'call_pending' : 'pending';
 
-    const job = await app.prisma.jobRequest.create({
-      data: { customerId: request.user.userId, workerId, type, description, status: initialStatus },
-    });
+    // Wrap check + create in transaction to prevent race-condition duplicate jobs
+    let job;
+    try {
+      job = await app.prisma.$transaction(async (tx) => {
+        const duplicate = await tx.jobRequest.findFirst({
+          where: {
+            customerId: request.user.userId,
+            workerId,
+            status: { in: ['pending', 'call_pending', 'accepted', 'started'] },
+          },
+        });
+        if (duplicate) {
+          const err: any = new Error('DUPLICATE_JOB');
+          err.code = 'DUPLICATE_JOB';
+          throw err;
+        }
+        return tx.jobRequest.create({
+          data: { customerId: request.user.userId, workerId, type, description, status: initialStatus },
+        });
+      });
+    } catch (err: any) {
+      if (err.code === 'DUPLICATE_JOB') {
+        return reply.status(409).send({ success: false, error: 'You already have an active request with this worker', code: 'DUPLICATE_JOB' });
+      }
+      throw err;
+    }
 
     // Notify worker
     const workerName = workerProfile.user.name;

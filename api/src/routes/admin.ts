@@ -76,18 +76,22 @@ export default async function adminRoutes(app: FastifyInstance) {
 
   // GET /api/admin/reviews/flagged
   app.get('/reviews/flagged', { preHandler: [app.adminOnly] }, async (request: FastifyRequest) => {
-    const { page = '1' } = request.query as Record<string, string>;
-    const skip = (parseInt(page) - 1) * 20;
+    const { page = '1', limit = '20' } = request.query as Record<string, string>;
+    const take = parseInt(limit);
+    const skip = (parseInt(page) - 1) * take;
 
-    const reviews = await app.prisma.review.findMany({
-      where: { reported: true, removed: false },
-      skip,
-      take: 20,
-      orderBy: { createdAt: 'desc' },
-      include: { fromUser: { select: { name: true } }, toWorker: { include: { user: { select: { name: true } } } } },
-    });
+    const [reviews, total] = await Promise.all([
+      app.prisma.review.findMany({
+        where: { reported: true, removed: false },
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' },
+        include: { fromUser: { select: { name: true } }, toWorker: { include: { user: { select: { name: true } } } } },
+      }),
+      app.prisma.review.count({ where: { reported: true, removed: false } }),
+    ]);
 
-    return { success: true, data: reviews };
+    return { success: true, data: reviews, meta: { total, page: parseInt(page), limit: take } };
   });
 
   // PATCH /api/admin/reviews/:id

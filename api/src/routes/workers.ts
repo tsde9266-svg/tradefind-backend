@@ -82,18 +82,29 @@ export default async function workerRoutes(app: FastifyInstance) {
 
   // GET /api/workers/saved
   app.get('/saved', { preHandler: [app.authenticate] }, async (request: FastifyRequest) => {
-    const saved = await app.prisma.savedWorker.findMany({
-      where: { userId: request.user.userId },
-      orderBy: { createdAt: 'desc' },
-    });
+    const { page = '1', limit = '20' } = request.query as Record<string, string>;
+    const take = Math.min(parseInt(limit), 50); // max 50 per page
+    const skip = (parseInt(page) - 1) * take;
+
+    const [saved, total] = await Promise.all([
+      app.prisma.savedWorker.findMany({
+        where: { userId: request.user.userId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      app.prisma.savedWorker.count({ where: { userId: request.user.userId } }),
+    ]);
 
     const workerIds = saved.map((s) => s.workerId);
+    if (workerIds.length === 0) return { success: true, data: [], meta: { total, page: parseInt(page), limit: take } };
+
     const profiles = await app.prisma.workerProfile.findMany({
       where: { id: { in: workerIds }, status: 'approved' },
       include: { user: { select: { name: true, phone: true, avatarUrl: true } } },
     });
 
-    return { success: true, data: profiles.map((p) => workerPublicView(p, p.user)) };
+    return { success: true, data: profiles.map((p) => workerPublicView(p, p.user)), meta: { total, page: parseInt(page), limit: take } };
   });
 
   // GET /api/workers/stats/today

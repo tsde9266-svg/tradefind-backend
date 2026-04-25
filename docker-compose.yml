@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
     command: >
       redis-server
-        --maxmemory 256mb
+        --maxmemory 512mb
         --maxmemory-policy allkeys-lru
         --appendonly yes
         --appendfsync everysec
@@ -84,7 +84,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1024M
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
       interval: 30s

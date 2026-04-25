@@ -42,9 +42,13 @@ export async function buildApp() {
   });
 
   await app.register(rateLimit, {
-    max: 120,
+    max: 200,            // per IP, not global
     timeWindow: '1 minute',
     skipOnError: true,
+    keyGenerator: (request) =>
+      request.headers['x-forwarded-for']?.toString().split(',')[0].trim() ??
+      request.ip ??
+      'unknown',
     errorResponseBuilder: () => ({
       success: false,
       error: 'Too many requests',
