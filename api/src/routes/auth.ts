@@ -290,22 +290,20 @@ export default async function authRoutes(app: FastifyInstance) {
       include: { workerProfile: true },
     });
 
-    let user: typeof existing;
+    let user: any;
     let isNewUser = false;
 
     if (existing) {
-      // Returning user — just log them in regardless of auth method
       user = existing;
     } else {
-      // New user — create account (no password, phone optional)
       isNewUser = true;
       const displayName = providerName ?? clientName ?? email.split('@')[0];
       user = await app.prisma.user.create({
         data: {
           name: displayName,
           email,
-          phone: null,
-          passwordHash: null,
+          phone: null as any,       // String? — nullable for social auth users
+          passwordHash: null as any, // no password for social auth
           role,
           ...(role === 'worker'
             ? { workerProfile: { create: { trades: [], certifications: [], portfolioPhotos: [], status: 'approved' } } }

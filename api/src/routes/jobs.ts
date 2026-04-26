@@ -248,7 +248,7 @@ export default async function jobRoutes(app: FastifyInstance) {
     // updateMany returns count=0 if the WHERE condition (status check) doesn't match,
     // meaning another request already changed the status.
     const result = await app.prisma.jobRequest.updateMany({
-      where: { id, status: { in: validTransitions[action] } },
+      where: { id, status: { in: validTransitions[action] as any } },
       data: { status: newStatus },
     });
 
@@ -387,31 +387,38 @@ export default async function jobRoutes(app: FastifyInstance) {
       },
       include: {
         customer: { select: { pushToken: true } },
+        // Use include only — 'select' overrides ALL fields including userId.
+        // WorkerProfile.userId is always available when using include.
         worker: {
-          select: { userId: true },
           include: { user: { select: { pushToken: true, name: true } } },
-        } as any,
+        },
       },
     });
     if (!job) return reply.status(404).send({ success: false, error: 'Job not found or cannot be cancelled', code: 'NOT_FOUND' });
 
     await app.prisma.jobRequest.update({ where: { id }, data: { status: 'cancelled' } });
 
-    // Notify the other party — include context about what state the job was in
+    const workerUserId = (job.worker as any)?.userId as string | undefined;
+    const workerPushToken = (job.worker as any)?.user?.pushToken as string | undefined;
+    const workerName     = (job.worker as any)?.user?.name as string | undefined;
+
     if (role === 'customer') {
-      const wasAccepted = ['accepted', 'started'].includes(job.status);
-      const msg = wasAccepted
-        ? 'The customer cancelled the job after you accepted. Sorry for the inconvenience.'
+      const wasActive = ['accepted', 'started'].includes(job.status);
+      const msg = wasActive
+        ? 'The customer cancelled after you accepted. Sorry for the inconvenience.'
         : 'The customer cancelled their request.';
-      await app.prisma.notification.create({
-        data: { userId: (job.worker as any)?.userId ?? '', type: 'job_declined', title: 'Job cancelled', body: msg },
-      }).catch(() => {});
-      sendPushNotification(job.worker.user.pushToken, 'Job cancelled', msg);
+      if (workerUserId) {
+        await app.prisma.notification.create({
+          data: { userId: workerUserId, type: 'job_declined', title: 'Job cancelled', body: msg },
+        }).catch(() => {});
+      }
+      sendPushNotification(workerPushToken, 'Job cancelled', msg);
     } else {
+      const msg = `${workerName ?? 'The worker'} cancelled the job.`;
       await app.prisma.notification.create({
-        data: { userId: job.customerId, type: 'job_declined', title: 'Job cancelled', body: `${job.worker.user.name} cancelled the job.` },
+        data: { userId: job.customerId, type: 'job_declined', title: 'Job cancelled', body: msg },
       }).catch(() => {});
-      sendPushNotification(job.customer.pushToken, 'Job cancelled', `${job.worker.user.name} cancelled the job.`);
+      sendPushNotification(job.customer.pushToken, 'Job cancelled', msg);
     }
 
     return { success: true, data: null };

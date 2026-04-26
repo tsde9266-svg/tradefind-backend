@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { geoAddWorker, geoRemoveWorker, geoSearchNearby } from '../lib/redis.js';
+const GEO_KEY = 'workers_available';
 import { sendPushNotification } from '../lib/push.js';
 
 function workerPublicView(profile: any, user: any, distanceMetres?: number) {
