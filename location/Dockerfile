@@ -5,7 +5,8 @@ RUN go mod download
 COPY . .
 RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o location-server .
 
-FROM scratch
+FROM alpine:3.19
+RUN apk add --no-cache wget ca-certificates
 COPY --from=builder /app/location-server /location-server
 EXPOSE 4000
 ENTRYPOINT ["/location-server"]
