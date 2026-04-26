@@ -75,6 +75,10 @@ export default async function jobRoutes(app: FastifyInstance) {
     if (workerProfile.status !== 'approved') {
       return reply.status(403).send({ success: false, error: 'This worker\'s account is not yet active', code: 'NOT_APPROVED' });
     }
+    // Prevent self-booking (user with dual customer+worker profiles)
+    if (request.user.userId === workerProfile.userId) {
+      return reply.status(403).send({ success: false, error: 'You cannot book yourself', code: 'FORBIDDEN' });
+    }
 
     const customer = await app.prisma.user.findUnique({
       where: { id: request.user.userId },
@@ -235,7 +239,10 @@ export default async function jobRoutes(app: FastifyInstance) {
       return reply.status(409).send({ success: false, error: `Cannot ${action} a job with status "${job.status}"`, code: 'INVALID_TRANSITION' });
     }
 
-    const newStatus = action === 'accept' ? 'accepted' : action === 'decline' ? 'declined' : 'accepted';
+    // confirm_call → started directly (customer already confirmed verbally, skip 'accepted' step)
+    // accept → accepted (worker confirmed in-app, customer still waiting for worker to start)
+    // decline → declined
+    const newStatus = action === 'decline' ? 'declined' : action === 'confirm_call' ? 'started' : 'accepted';
 
     // Atomic conditional update — prevents two workers from transitioning the same job simultaneously.
     // updateMany returns count=0 if the WHERE condition (status check) doesn't match,
@@ -375,21 +382,35 @@ export default async function jobRoutes(app: FastifyInstance) {
       where: {
         id,
         ...(role === 'customer' ? { customerId: userId } : { workerId: workerProfile?.id }),
-        status: { in: ['pending', 'call_pending', 'accepted'] },
+        // Allow cancel of started jobs too — workers/customers can abort if needed
+        status: { in: ['pending', 'call_pending', 'accepted', 'started'] },
       },
       include: {
         customer: { select: { pushToken: true } },
-        worker: { include: { user: { select: { pushToken: true, name: true } } } },
+        worker: {
+          select: { userId: true },
+          include: { user: { select: { pushToken: true, name: true } } },
+        } as any,
       },
     });
     if (!job) return reply.status(404).send({ success: false, error: 'Job not found or cannot be cancelled', code: 'NOT_FOUND' });
 
     await app.prisma.jobRequest.update({ where: { id }, data: { status: 'cancelled' } });
 
-    // Notify the other party
+    // Notify the other party — include context about what state the job was in
     if (role === 'customer') {
-      sendPushNotification(job.worker.user.pushToken, 'Job request cancelled', 'The customer cancelled their request.');
+      const wasAccepted = ['accepted', 'started'].includes(job.status);
+      const msg = wasAccepted
+        ? 'The customer cancelled the job after you accepted. Sorry for the inconvenience.'
+        : 'The customer cancelled their request.';
+      await app.prisma.notification.create({
+        data: { userId: (job.worker as any)?.userId ?? '', type: 'job_declined', title: 'Job cancelled', body: msg },
+      }).catch(() => {});
+      sendPushNotification(job.worker.user.pushToken, 'Job cancelled', msg);
     } else {
+      await app.prisma.notification.create({
+        data: { userId: job.customerId, type: 'job_declined', title: 'Job cancelled', body: `${job.worker.user.name} cancelled the job.` },
+      }).catch(() => {});
       sendPushNotification(job.customer.pushToken, 'Job cancelled', `${job.worker.user.name} cancelled the job.`);
     }
 
