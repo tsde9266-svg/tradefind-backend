@@ -266,15 +266,19 @@ export default async function jobRoutes(app: FastifyInstance) {
 
     const workerName = (profile as any).user?.name ?? 'Your worker';
 
-    const [notifTitle, notifBody, notifType] =
+    type NotifEntry = [string, string, 'job_accepted' | 'job_declined' | 'job_started', Record<string, string>];
+    const [notifTitle, notifBody, notifType, pushData]: NotifEntry =
       newStatus === 'accepted'
-        ? [`${workerName} accepted your request!`, 'He\'ll start his journey shortly.', 'job_accepted' as const]
-        : [`${workerName} declined your request`, 'Try requesting another tradesperson.', 'job_declined' as const];
+        ? [`${workerName} accepted!`, "He'll start his journey shortly.", 'job_accepted', { jobId: id, screen: 'job_status' }]
+        : newStatus === 'started'
+          // confirm_call → started: customer needs to know worker is en route NOW
+          ? [`${workerName} is on his way!`, 'Your call agreement is confirmed. Track his live location.', 'job_started', { jobId: id, screen: 'tracking', workerId: profile.id }]
+          : [`${workerName} declined`, 'Try requesting another tradesperson.', 'job_declined', { jobId: id, screen: 'job_status' }];
 
     await app.prisma.notification.create({
       data: { userId: job.customerId, type: notifType, title: notifTitle, body: notifBody },
     });
-    sendPushNotification(job.customer.pushToken, notifTitle, notifBody, { jobId: id, screen: 'job_status' });
+    sendPushNotification(job.customer.pushToken, notifTitle, notifBody, pushData);
 
     return { success: true, data: jobView(updated) };
   });
