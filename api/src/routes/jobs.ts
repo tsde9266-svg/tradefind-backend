@@ -69,8 +69,11 @@ export default async function jobRoutes(app: FastifyInstance) {
       where: { id: workerId },
       include: { user: { select: { name: true, pushToken: true } } },
     });
-    if (!workerProfile || workerProfile.status !== 'approved') {
+    if (!workerProfile) {
       return reply.status(404).send({ success: false, error: 'Worker not found', code: 'NOT_FOUND' });
+    }
+    if (workerProfile.status !== 'approved') {
+      return reply.status(403).send({ success: false, error: 'This worker\'s account is not yet active', code: 'NOT_APPROVED' });
     }
 
     const customer = await app.prisma.user.findUnique({

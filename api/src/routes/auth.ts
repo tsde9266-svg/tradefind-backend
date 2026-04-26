@@ -124,7 +124,7 @@ export default async function authRoutes(app: FastifyInstance) {
       data: {
         name, email, phone, passwordHash, role,
         ...(role === 'worker' ? {
-          workerProfile: { create: { trades: [], certifications: [], portfolioPhotos: [] } },
+          workerProfile: { create: { trades: [], certifications: [], portfolioPhotos: [], status: 'approved' } },
         } : {}),
       },
       include: { workerProfile: true },
@@ -308,7 +308,7 @@ export default async function authRoutes(app: FastifyInstance) {
           passwordHash: null,
           role,
           ...(role === 'worker'
-            ? { workerProfile: { create: { trades: [], certifications: [], portfolioPhotos: [] } } }
+            ? { workerProfile: { create: { trades: [], certifications: [], portfolioPhotos: [], status: 'approved' } } }
             : {}),
         },
         include: { workerProfile: true },
