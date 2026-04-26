@@ -249,7 +249,13 @@ export default async function jobRoutes(app: FastifyInstance) {
       return reply.status(409).send({ success: false, error: 'Job status changed by another request', code: 'CONFLICT' });
     }
 
-    const updated = await app.prisma.jobRequest.findUnique({ where: { id } });
+    const updated = await app.prisma.jobRequest.findUnique({
+      where: { id },
+      include: {
+        customer: { select: { id: true, name: true, avatarUrl: true, phone: true } },
+        worker:   { include: { user: { select: { name: true, avatarUrl: true, phone: true } } } },
+      },
+    });
 
     const workerName = (profile as any).user?.name ?? 'Your worker';
 
@@ -293,7 +299,13 @@ export default async function jobRoutes(app: FastifyInstance) {
     if (startResult.count === 0) {
       return reply.status(409).send({ success: false, error: 'Job already started or changed', code: 'CONFLICT' });
     }
-    const updated = await app.prisma.jobRequest.findUnique({ where: { id } });
+    const updated = await app.prisma.jobRequest.findUnique({
+      where: { id },
+      include: {
+        customer: { select: { id: true, name: true, avatarUrl: true, phone: true } },
+        worker:   { include: { user: { select: { name: true, avatarUrl: true, phone: true } } } },
+      },
+    });
 
     const workerName = (profile as any).user?.name ?? 'Your worker';
 
@@ -332,7 +344,13 @@ export default async function jobRoutes(app: FastifyInstance) {
     if (completeResult.count === 0) {
       return reply.status(409).send({ success: false, error: 'Job already completed or changed', code: 'CONFLICT' });
     }
-    const updated = await app.prisma.jobRequest.findUnique({ where: { id } });
+    const updated = await app.prisma.jobRequest.findUnique({
+      where: { id },
+      include: {
+        customer: { select: { id: true, name: true, avatarUrl: true, phone: true } },
+        worker:   { include: { user: { select: { name: true, avatarUrl: true, phone: true } } } },
+      },
+    });
 
     const workerName = (profile as any).user?.name ?? 'Your worker';
 
