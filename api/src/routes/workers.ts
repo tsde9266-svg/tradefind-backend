@@ -1,7 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { geoAddWorker, geoRemoveWorker, geoSearchNearby } from '../lib/redis.js';
-const GEO_KEY = 'workers_available';
 import { sendPushNotification } from '../lib/push.js';
 
 function workerPublicView(profile: any, user: any, distanceMetres?: number) {
@@ -79,7 +78,7 @@ export default async function workerRoutes(app: FastifyInstance) {
     // Remove stale workers from geo set in the background (fire-and-forget)
     const staleIds = geoWorkers.map((w) => w.id).filter((id) => !freshIds.has(id));
     if (staleIds.length > 0) {
-      app.redis.zrem(GEO_KEY, ...staleIds).catch(() => {});
+      app.redis.zrem('workers_available', ...staleIds).catch(() => {});
     }
 
     const filteredGeoWorkers = geoWorkers.filter((w) => freshIds.has(w.id));

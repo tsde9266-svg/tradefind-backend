@@ -25,4 +25,4 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 USER appuser
 
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss --skip-generate && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss --skip-generate 2>&1 | grep -v 'already exists' || true; node dist/scripts/seed-redis-geo.js; node dist/index.js"]

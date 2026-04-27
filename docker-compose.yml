@@ -44,8 +44,8 @@ services:
         --timeout 300
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
+    expose:
+      - "6379"
     deploy:
       resources:
         limits:
@@ -75,7 +75,7 @@ services:
       PORT: "3000"
       NODE_ENV: production
     ports:
-      - "3000:3000"
+      - "3001:3000"
     depends_on:
       postgres:
         condition: service_healthy
